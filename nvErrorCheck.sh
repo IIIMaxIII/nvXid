@@ -1,14 +1,35 @@
 #!/usr/bin/env bash
-
-# nvErrorCheck.sh — track NVIDIA Xid errors in syslog, send last 10 lines on first run
+# nvErr — track NVIDIA Xid errors in syslog
+# modes: start (default), rch, recheck (ignore state, show last 10 Xid errors)
 
 SYSLOG="/var/log/syslog"
-STATE_FILE="/var/tmp/nvErrorCheck.pos"
+STATE_FILE="/var/tmp/nvErr.pos"
+MODE="${1:-start}"  # default is 'start'
 
-# Get current size of syslog
+check_errors() {
+    local first_run=$1
+    local last_size=$2
+    local errors
+
+    if [[ $first_run -eq 1 ]]; then
+        errors=$(tail -n 10 "$SYSLOG" | grep -a "Xid")
+    else
+        errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -a "Xid")
+    fi
+
+    if [[ -n "$errors" ]]; then
+        echo "$errors" | message danger "GPU Xid errors detected" payload
+    fi
+}
+
+if [[ "$MODE" == "rch" || "$MODE" == "recheck" ]]; then
+    # Ignore state file, show last 10 Xid errors
+    check_errors 1
+    exit 0
+fi
+
+# standard 'start' mode
 CUR_SIZE=$(stat -c%s "$SYSLOG")
-
-# If state file exists, read last position; else set flag for first run
 if [[ -f "$STATE_FILE" ]]; then
     LAST_SIZE=$(cat "$STATE_FILE")
     FIRST_RUN=0
@@ -18,18 +39,7 @@ else
     FIRST_RUN=1
 fi
 
-# On first run: take only last 10 Xid lines
-if [[ $FIRST_RUN -eq 1 ]]; then
-    errors=$(tail -n 10 "$SYSLOG" | grep -a "Xid")
-else
-    # Subsequent runs: take new lines since last check
-    errors=$(tail -c +$((LAST_SIZE+1)) "$SYSLOG" | grep -a "Xid")
-fi
+check_errors $FIRST_RUN "$LAST_SIZE"
 
-# Send errors if any
-if [[ -n "$errors" ]]; then
-    echo "$errors" | message danger "GPU Xid errors detected" payload
-fi
-
-# Update position for next run
+# update state
 echo "$CUR_SIZE" > "$STATE_FILE"
