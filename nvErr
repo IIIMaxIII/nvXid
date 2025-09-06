@@ -1,30 +1,20 @@
 #!/usr/bin/env bash
-# nvErr.sh — trace Xid errors in syslog and notify via /hive/bin/message
-
 set -euo pipefail
 
 SYSLOG="/var/log/syslog"
-STATE_FILE="/var/tmp/nvErr.pos"
-MODE="${1:-start}"  # default mode is 'start'
-
-# Config
 CONFIG_FILE="/hive/bin/nvErr.cfg"
 TELEGRAM_ENABLED=0
+STATE_FILE="/var/tmp/nvErr.pos"
+INITIAL_LINES=100  # number of lines to check on first run
 
+# --- Load config if exists ---
 if [[ -f "$CONFIG_FILE" ]]; then
-    source "$CONFIG_FILE"  # expects TELEGRAM_TOKEN and CHAT_ID
-
-    # Enable Telegram only if both TELEGRAM_TOKEN and CHAT_ID are set and non-empty
-    if [[ -n "${TELEGRAM_TOKEN:-}" && -n "${CHAT_ID:-}" ]]; then
-        TELEGRAM_ENABLED=1
-    else
-        echo "Config file $CONFIG_FILE loaded, but TELEGRAM_TOKEN or CHAT_ID is empty — Telegram disabled."
-    fi
-else
-    echo "Config file $CONFIG_FILE not found — Telegram disabled."
+    source "$CONFIG_FILE"
+    [[ -n "${TELEGRAM_TOKEN:-}" && -n "${CHAT_ID:-}" ]] && TELEGRAM_ENABLED=1
 fi
 
-# Function to send Telegram message
+# --- Functions ---
+
 send_telegram() {
     [[ $TELEGRAM_ENABLED -eq 0 ]] && return
     local msg="$1"
@@ -35,64 +25,62 @@ send_telegram() {
         -d text="$msg" >/dev/null
 }
 
-# Function to notify both Telegram and Hive message
 notify() {
     local errors="$1"
 
-    # Telegram notification (Markdown)
+    # Send to Telegram (Markdown formatted)
     if [[ $TELEGRAM_ENABLED -eq 1 ]]; then
-        local telegram_msg=$'⚠️ *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
+        local telegram_msg=$'⚠ ️ *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
         send_telegram "$telegram_msg"
     fi
 
-    # Hive message notification with payload (safe for quotes and newlines)
-    # 'data' is short header, 'payload' is full errors text
-    msg_id=$(date +%s)  # Generate a unique numeric ID based on the current Unix timestamp (seconds since 1970-01-01)
-    echo "$errors" | /hive/bin/message danger "GPU Xid errors detected" payload -i="$msg_id"
+    # Print errors to console (for external shell usage)
+    echo "$errors"
 
+    # Send errors to Hive message only if running locally
+    if [[ -t 1 ]]; then
+        local msg_id
+        msg_id=$(date +%s)
+        echo "$errors" | /hive/bin/message danger "GPU Xid errors detected" payload -i="$msg_id" >/dev/null
+    fi
 }
 
-# Function to check syslog for Xid errors
 check_errors() {
-    local first_run=$1
-    local last_size=$2
-    local errors
+    local num_lines="${1:-0}"
+    local first_run=0
+    local last_size=0
+    local errors=""
 
-    if [[ $first_run -eq 1 ]]; then
-        # On first run, check last 100 lines
-        errors=$(tail -n 100 "$SYSLOG" | grep -ai "Xid")
+    # If user specified number of lines, ignore STATE_FILE
+    if [[ "$num_lines" -gt 0 ]]; then
+        errors=$(tail -n "$num_lines" "$SYSLOG" | grep -ai "Xid")
     else
-        # Otherwise, check only new lines since last position
-        errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -ai "Xid")
+        # Determine last processed position
+        if [[ -f "$STATE_FILE" ]]; then
+            last_size=$(cat "$STATE_FILE")
+            first_run=0
+        else
+            first_run=1
+        fi
+
+        # Get current size of syslog
+        local cur_size
+        cur_size=$(stat -c%s "$SYSLOG")
+
+        if [[ $first_run -eq 1 ]]; then
+            errors=$(tail -n "$INITIAL_LINES" "$SYSLOG" | grep -ai "Xid")
+        else
+            [[ $cur_size -lt $last_size ]] && last_size=0  # log rotation
+            errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -ai "Xid")
+        fi
+
+        # Save current position for next run
+        echo "$cur_size" > "$STATE_FILE"
     fi
 
-    # Notify if errors found
-    if [[ -n "$errors" ]]; then
-        notify "$errors"
-    fi
+    [[ -n "$errors" ]] && notify "$errors"
 }
 
-# Main script logic
-if [[ "$MODE" == "rc" || "$MODE" == "recheck" ]]; then
-    check_errors 1 0
-    exit 0
-fi
-
-# Get current size of syslog
-CUR_SIZE=$(stat -c%s "$SYSLOG")
-
-# Determine last processed position
-if [[ -f "$STATE_FILE" ]]; then
-    LAST_SIZE=$(cat "$STATE_FILE")
-    FIRST_RUN=0
-    [[ "$CUR_SIZE" -lt "$LAST_SIZE" ]] && LAST_SIZE=0  # log rotation case
-else
-    LAST_SIZE=0
-    FIRST_RUN=1
-fi
-
-# Check for Xid errors
-check_errors $FIRST_RUN "$LAST_SIZE"
-
-# Save current position
-echo "$CUR_SIZE" > "$STATE_FILE"
+# --- Main ---
+NUM_LINES="${1:-0}"  # default 0 = use STATE_FILE logic
+check_errors "$NUM_LINES"
