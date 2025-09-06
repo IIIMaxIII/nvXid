@@ -65,12 +65,18 @@ check_errors() {
 
         # Get current size of syslog
         local cur_size
-        cur_size=$(stat -c%s "$SYSLOG")
+        cur_size=$(stat -c%s "$SYSLOG" 2>/dev/null || echo 0)
 
+        # If syslog decreased or was deleted — treat as first run
+        if [[ $cur_size -lt $last_size ]]; then
+            last_size=0
+            first_run=1
+        fi
+
+        # Get errors
         if [[ $first_run -eq 1 ]]; then
             errors=$(tail -n "$INITIAL_LINES" "$SYSLOG" | grep -a "Xid")
         else
-            [[ $cur_size -lt $last_size ]] && last_size=0  # log rotation
             errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -a "Xid")
         fi
 
