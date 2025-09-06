@@ -46,7 +46,7 @@ CHAT_ID="your_chat_id_here"
 ### Run normally (incremental)
 
 ```bash
-./nvErr.sh
+nvErr
 ```
 
 * Checks only new log lines since the last run.
@@ -55,7 +55,7 @@ CHAT_ID="your_chat_id_here"
 ### Run with a specific number of lines (ignore previous state)
 
 ```bash
-./nvErr.sh 50
+nvErr 1000
 ```
 
-* Checks the last 50 lines of the syslog regardless of previous runs.
+* Checks the last 1000 lines of the syslog regardless of previous runs.
