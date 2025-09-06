@@ -37,17 +37,21 @@ The `nvErr.sh` script monitors GPU-related Xid errors in the Linux system log (`
 | `rc` / `recheck` | Checks the last 100 lines of the log               |
 
 ---
+Here’s the edited version in English, reflecting the current logic:
+
+---
 
 ## Telegram Configuration
 
-Create the file `/hive/bin/nvErr.cfg` with the following content:
+Edit the file `/hive/bin/nvErr.cfg` to contain the following:
 
 ```bash
 TELEGRAM_TOKEN="your_bot_token"
 CHAT_ID="your_chat_id"
 ```
 
-If the file is missing, Telegram notifications are disabled.
+* Both `TELEGRAM_TOKEN` and `CHAT_ID` **must be set and non-empty** for Telegram notifications to work.
+* If the file is missing **or** any of the variables are empty, Telegram notifications will be disabled.
 
 ---
 
