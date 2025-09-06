@@ -53,7 +53,7 @@ check_errors() {
 
     # If user specified number of lines, ignore STATE_FILE
     if [[ "$num_lines" -gt 0 ]]; then
-        errors=$(tail -n "$num_lines" "$SYSLOG" | grep -ai "Xid")
+        errors=$(tail -n "$num_lines" "$SYSLOG" | grep -a "Xid")
     else
         # Determine last processed position
         if [[ -f "$STATE_FILE" ]]; then
@@ -68,10 +68,10 @@ check_errors() {
         cur_size=$(stat -c%s "$SYSLOG")
 
         if [[ $first_run -eq 1 ]]; then
-            errors=$(tail -n "$INITIAL_LINES" "$SYSLOG" | grep -ai "Xid")
+            errors=$(tail -n "$INITIAL_LINES" "$SYSLOG" | grep -a "Xid")
         else
             [[ $cur_size -lt $last_size ]] && last_size=0  # log rotation
-            errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -ai "Xid")
+            errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -a "Xid")
         fi
 
         # Save current position for next run
