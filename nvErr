@@ -30,7 +30,8 @@ notify() {
 
     # Send to Telegram (Markdown formatted)
     if [[ $TELEGRAM_ENABLED -eq 1 ]]; then
-        local telegram_msg=$'⚠ ️ *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
+#        local telegram_msg=$'⚠ ️ *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
+        local telegram_msg=$'⚠️ *'"$(hostname)"$'*  *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
         send_telegram "$telegram_msg"
     fi
 
