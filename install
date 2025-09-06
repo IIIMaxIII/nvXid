@@ -3,5 +3,5 @@ wget -q -O /hive/bin/nvErr https://raw.githubusercontent.com/IIIMaxIII/nvXid/ref
 reboot
 
 remove:
-sudo rm -f /hive/bin/nvErr /hive/bin/nvErr.cfg && sudo sed -i '/\/hive\/bin\/nvErr/d' /hive/etc/crontab.root && reboot
+sudo rm -f /hive/bin/nvErr /hive/bin/nvErr.cfg && sudo sed -i '/\/hive\/bin\/nvErr/d' /hive/etc/crontab.root
 reboot
