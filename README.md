@@ -1,69 +1,61 @@
-**Description:**
-The `nvErr.sh` script monitors GPU-related Xid errors in the Linux system log (`/var/log/syslog`). When such errors are detected, it notifies the user via Telegram (if configured) and through a local notification script `/hive/bin/message`.
+# nvErr
+
+`nvErr` is a Bash script for monitoring GPU Xid errors in the system log (`/var/log/syslog`) and sending notifications via Telegram and HiveOS. It is designed for mining rigs or systems with NVIDIA GPUs.
 
 ---
 
 ## Features
 
-1. **GPU Xid Error Monitoring**
-   The script scans the system log for messages containing `Xid` (case-insensitive).
+* Detects NVIDIA GPU Xid errors in `syslog`.
+* Sends alerts to **Telegram** with Markdown formatting.
+* Sends alerts to **HiveOS** (optionally only during local execution).
+* Prints errors to console for local monitoring or external shell use.
+* Supports incremental checking:
 
-2. **Notifications**
+  * On first run, checks the last `INITIAL_LINES` lines.
+  * On subsequent runs, checks **only new log lines**.
+* Handles log rotation automatically.
+* Optional command-line argument to check a specific number of last lines, ignoring previous state.
 
-   * **Telegram:** via bot if configuration file `/hive/bin/nvErr.cfg` exists with `TELEGRAM_TOKEN` and `CHAT_ID`.
-   * **Local notifications:** via `/hive/bin/message`.
+---
 
-3. **Position Tracking**
-   The script saves the last read position in `/var/tmp/nvErr.pos` to process only new log entries on subsequent runs.
+## Requirements
 
-4. **Run Modes**
+* Bash `4.x+`
+* `curl` (for Telegram notifications)
+* HiveOS agent `/hive/bin/message` (optional)
+* NVIDIA drivers generating Xid messages in syslog
 
-   * `start` (default): checks for new errors since the last run.
-   * `rc` or `recheck`: checks the last 100 lines of the log regardless of previous state.
+---
+
+## Configuration
+
+The script uses an existing configuration file at `/hive/bin/nvErr.cfg` with the following variables:
+
+```bash
+TELEGRAM_TOKEN="your_bot_token_here"
+CHAT_ID="your_chat_id_here"
+```
+
+* If the file or variables are missing or empty, Telegram notifications are **disabled**, but console and HiveOS messages will still work.
 
 ---
 
 ## Usage
 
-```bash
-./nvErr.sh [MODE]
-```
-
-**Parameters:**
-
-| Parameter        | Description                                        |
-| ---------------- | -------------------------------------------------- |
-| `start`          | Checks for new errors since the last run (default) |
-| `rc` / `recheck` | Checks the last 100 lines of the log               |
-
----
-Here’s the edited version in English, reflecting the current logic:
-
----
-
-## Telegram Configuration
-
-Edit the file `/hive/bin/nvErr.cfg` to contain the following:
+### Run normally (incremental)
 
 ```bash
-TELEGRAM_TOKEN="your_bot_token"
-CHAT_ID="your_chat_id"
+./nvErr.sh
 ```
 
-* Both `TELEGRAM_TOKEN` and `CHAT_ID` **must be set and non-empty** for Telegram notifications to work.
-* If the file is missing **or** any of the variables are empty, Telegram notifications will be disabled.
+* Checks only new log lines since the last run.
+* First run checks `INITIAL_LINES` last lines (default `100`, configurable inside the script).
 
----
+### Run with a specific number of lines (ignore previous state)
 
-## How It Works
+```bash
+./nvErr.sh 50
+```
 
-1. Determines the size of the system log `/var/log/syslog`.
-2. Reads the state file `/var/tmp/nvErr.pos` to know where to continue from.
-3. If it’s the first run or the log has shrunk (e.g., after rotation), it checks the log from the beginning.
-4. Filters lines containing the keyword `Xid`.
-5. If errors are found:
-
-   * Builds a formatted message with the errors.
-   * Sends it to Telegram (if configured).
-   * Sends it via `/hive/bin/message`.
-6. Saves the current log position to `/var/tmp/nvErr.pos`.
+* Checks the last 50 lines of the syslog regardless of previous runs.
