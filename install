@@ -5,6 +5,10 @@ reboot
 or
 wget -q -O /hive/bin/nvErr https://raw.githubusercontent.com/IIIMaxIII/nvXid/refs/heads/main/nvErr && wget -q -O /hive/bin/nvErr.cfg https://raw.githubusercontent.com/IIIMaxIII/nvXid/refs/heads/main/nvErr.cfg && chmod 755 /hive/bin/nvErr && (grep -qxF "@reboot /hive/bin/nvErr" /hive/etc/crontab.root || sh -c 'echo "@reboot /hive/bin/nvErr" >> /hive/etc/crontab.root') && (grep -qxF "*/5 * * * * /hive/bin/nvErr" /hive/etc/crontab.root || sh -c 'echo "*/5 * * * * /hive/bin/nvErr" >> /hive/etc/crontab.root'); reboot
 
+v2
+wget -q -O /hive/bin/nvErr https://github.com/IIIMaxIII/nvXid/raw/refs/heads/main/nvErr_v2 && wget -q -O /hive/bin/nvErr.cfg https://raw.githubusercontent.com/IIIMaxIII/nvXid/refs/heads/main/nvErr.cfg && chmod 755 /hive/bin/nvErr && (grep -qxF "@reboot /hive/bin/nvErr" /hive/etc/crontab.root || sh -c 'echo "@reboot /hive/bin/nvErr" >> /hive/etc/crontab.root') && (grep -qxF "*/5 * * * * /hive/bin/nvErr" /hive/etc/crontab.root || sh -c 'echo "*/5 * * * * /hive/bin/nvErr" >> /hive/etc/crontab.root') && reboot
+
+
 remove:
 sudo rm -f /hive/bin/nvErr /hive/bin/nvErr.cfg && sudo sed -i '/\/hive\/bin\/nvErr/d' /hive/etc/crontab.root
 reboot
