@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SYSLOG="/var/log/syslog"
+readonly CONFIG_FILE="/hive/bin/nvErr.cfg"
+readonly STATE_FILE="/var/tmp/nvErr.pos"
+readonly INITIAL_LINES=100
+
+TELEGRAM_ENABLED=0
+
+# --- Load config if exists ---
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+    [[ -n "${TELEGRAM_TOKEN:-}" && -n "${CHAT_ID:-}" ]] && TELEGRAM_ENABLED=1
+fi
+
+# --- Functions ---
+
+send_telegram() {
+    [[ $TELEGRAM_ENABLED -eq 0 ]] && return
+    local msg="$1"
+    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+        -d chat_id="$CHAT_ID" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview=true \
+        -d text="$msg" >/dev/null
+}
+
+notify() {
+    local errors="$1"
+
+    # Send to Telegram
+    if [[ $TELEGRAM_ENABLED -eq 1 ]]; then
+        local telegram_msg=$'⚠️ *'"$(hostname)"$'*  *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
+        send_telegram "$telegram_msg" &
+    fi
+
+    # Print to console
+    echo "$errors"
+
+    # Send to Hive message (async)
+    local msg_id
+    msg_id=$(date +%s)
+    echo "$errors" | /hive/bin/message danger "GPU Xid errors detected" payload -i="$msg_id" >/dev/null &
+}
+
+check_errors() {
+    local num_lines="${1:-0}"
+    local current_size=0
+    local last_size=0
+
+    # Get current file size
+    if [[ -f "$SYSLOG" ]]; then
+        current_size=$(stat -c%s "$SYSLOG" 2>/dev/null || echo 0)
+    fi
+
+    if [[ "$num_lines" -gt 0 ]]; then
+        # Mode with specified line count
+        errors=$(tail -n "$num_lines" "$SYSLOG" | grep -a "Xid" 2>/dev/null || true)
+    else
+        # Stateful mode
+        if [[ -f "$STATE_FILE" ]]; then
+            last_size=$(<"$STATE_FILE")
+            # Handle log rotation
+            if [[ $current_size -lt $last_size ]]; then
+                last_size=0
+            fi
+        fi
+
+        if [[ $last_size -eq 0 ]]; then
+            # First run or log rotation
+            errors=$(tail -n "$INITIAL_LINES" "$SYSLOG" | grep -a "Xid" 2>/dev/null || true)
+        elif [[ $current_size -gt $last_size ]]; then
+            # Read only new data using dd for efficiency
+            errors=$(dd if="$SYSLOG" bs=1 skip="$last_size" 2>/dev/null | grep -a "Xid" || true)
+        fi
+
+        # Save current position
+        echo "$current_size" > "$STATE_FILE"
+    fi
+
+    [[ -n "$errors" ]] && notify "$errors"
+}
+
+# --- Main ---
+NUM_LINES="${1:-0}"
+check_errors "$NUM_LINES"
