@@ -38,11 +38,11 @@ notify() {
     echo "$errors"
 
     # Send errors to Hive message only if running locally
-    if [[ -t 1 ]]; then
+#    if [[ -t 1 ]]; then
         local msg_id
         msg_id=$(date +%s)
         echo "$errors" | /hive/bin/message danger "GPU Xid errors detected" payload -i="$msg_id" >/dev/null
-    fi
+#    fi
 }
 
 check_errors() {
