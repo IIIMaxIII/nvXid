@@ -5,20 +5,28 @@ set -euo pipefail
 
 SYSLOG="/var/log/syslog"
 STATE_FILE="/var/tmp/nvErr.pos"
-MODE="${1:-start}"  # default is 'start'
+MODE="${1:-start}"  # default mode is 'start'
 
 # Config
 CONFIG_FILE="/hive/bin/nvErr.cfg"
+TELEGRAM_ENABLED=0
+
 if [[ -f "$CONFIG_FILE" ]]; then
-    source "$CONFIG_FILE"  # expects TELEGRAM_TOKEN, CHAT_ID
-    TELEGRAM_ENABLED=1
+    source "$CONFIG_FILE"  # expects TELEGRAM_TOKEN and CHAT_ID
+
+    # Enable Telegram only if both TELEGRAM_TOKEN and CHAT_ID are set and non-empty
+    if [[ -n "${TELEGRAM_TOKEN:-}" && -n "${CHAT_ID:-}" ]]; then
+        TELEGRAM_ENABLED=1
+    else
+        echo "Config file $CONFIG_FILE loaded, but TELEGRAM_TOKEN or CHAT_ID is empty — Telegram disabled."
+    fi
 else
     echo "Config file $CONFIG_FILE not found — Telegram disabled."
-    TELEGRAM_ENABLED=0
 fi
 
+# Function to send Telegram message
 send_telegram() {
-    [[ $TELEGRAM_ENABLED -eq 0 ]] && return  # skip if no config
+    [[ $TELEGRAM_ENABLED -eq 0 ]] && return
     local msg="$1"
     curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
         -d chat_id="$CHAT_ID" \
@@ -27,47 +35,63 @@ send_telegram() {
         -d text="$msg" >/dev/null
 }
 
+# Function to notify both Telegram and Hive message
 notify() {
-    local msg="$1"
-    send_telegram "$msg"
-    # call external message script (Hive)
-    /hive/bin/message danger "GPU Xid errors detected" payload
+    local errors="$1"
+
+    # Telegram notification (Markdown)
+    if [[ $TELEGRAM_ENABLED -eq 1 ]]; then
+        local telegram_msg=$'⚠️ *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
+        send_telegram "$telegram_msg"
+    fi
+
+    # Hive message notification with payload (safe for quotes and newlines)
+    # 'data' is short header, 'payload' is full errors text
+    msg_id=$(date +%s)  # Generate a unique numeric ID based on the current Unix timestamp (seconds since 1970-01-01)
+    echo "$errors" | /hive/bin/message danger "GPU Xid errors detected" payload -i="$msg_id"
+
 }
 
+# Function to check syslog for Xid errors
 check_errors() {
     local first_run=$1
     local last_size=$2
     local errors
 
     if [[ $first_run -eq 1 ]]; then
+        # On first run, check last 100 lines
         errors=$(tail -n 100 "$SYSLOG" | grep -ai "Xid")
     else
+        # Otherwise, check only new lines since last position
         errors=$(tail -c +$((last_size+1)) "$SYSLOG" | grep -ai "Xid")
     fi
 
+    # Notify if errors found
     if [[ -n "$errors" ]]; then
-        local msg=$'⚠️ *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
-        notify "$msg"
+        notify "$errors"
     fi
 }
 
-# Main
+# Main script logic
 if [[ "$MODE" == "rc" || "$MODE" == "recheck" ]]; then
     check_errors 1 0
     exit 0
 fi
 
+# Get current size of syslog
 CUR_SIZE=$(stat -c%s "$SYSLOG")
 
+# Determine last processed position
 if [[ -f "$STATE_FILE" ]]; then
     LAST_SIZE=$(cat "$STATE_FILE")
     FIRST_RUN=0
-    [[ "$CUR_SIZE" -lt "$LAST_SIZE" ]] && LAST_SIZE=0
+    [[ "$CUR_SIZE" -lt "$LAST_SIZE" ]] && LAST_SIZE=0  # log rotation case
 else
     LAST_SIZE=0
     FIRST_RUN=1
 fi
 
+# Check for Xid errors
 check_errors $FIRST_RUN "$LAST_SIZE"
 
 # Save current position
