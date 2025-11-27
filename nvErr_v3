@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly CONFIG_FILE="/hive/bin/nvErr.cfg"
+readonly CURSOR_FILE="/dev/shm/nvErr.cursor"
+readonly LOCK_FILE="/dev/shm/nvErr.lock"
+
+TELEGRAM_ENABLED=0
+
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+    [[ -n "${TELEGRAM_TOKEN:-}" && -n "${CHAT_ID:-}" ]] && TELEGRAM_ENABLED=1
+fi
+
+send_telegram() {
+    [[ $TELEGRAM_ENABLED -eq 0 ]] && return
+    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+        -d chat_id="$CHAT_ID" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview=true \
+        -d text="$1" >/dev/null
+}
+
+notify() {
+    local errors="$1"
+    if [[ $TELEGRAM_ENABLED -eq 1 ]]; then
+        local telegram_msg=$'⚠ ️ *'"$(hostname)"$'*  *GPU Xid errors detected:*\n```\n'"$errors"$'\n```'
+        send_telegram "$telegram_msg" &
+    fi
+
+    echo "$errors"
+
+    local msg_id
+    msg_id=$(date +%s)
+    echo "$errors" | /hive/bin/message danger "GPU Xid errors detected" payload -i="$msg_id" >/dev/null &
+}
+
+read_journal() {
+    local num_lines="${1:-0}"
+    local errors=""
+
+    if [[ "$num_lines" -gt 0 ]]; then
+        errors=$(journalctl -n "$num_lines" -k --no-pager | grep -a "Xid" || true)
+        echo "$errors"
+        return
+    fi
+
+    local cursor=""
+    [[ -f "$CURSOR_FILE" ]] && cursor=$(<"$CURSOR_FILE")
+
+    local journal_opts=(-k --no-pager)
+    [[ -n "$cursor" ]] && journal_opts+=(--after-cursor="$cursor") || journal_opts+=(--since="1 hour ago")
+
+    errors=$(journalctl "${journal_opts[@]}" | grep -a "Xid" || true)
+
+    local new_cursor=""
+    new_cursor=$(journalctl "${journal_opts[@]}" --show-cursor 2>/dev/null | sed -n 's/^-- cursor: //p' | tail -n1 || true)
+
+    if [[ -n "$new_cursor" ]]; then
+        local tmp="${CURSOR_FILE}.tmp"
+        printf "%s" "$new_cursor" > "$tmp"
+        mv "$tmp" "$CURSOR_FILE"
+    fi
+
+    echo "$errors"
+}
+
+check_errors() {
+    local num_lines="${1:-0}"
+    local errors
+    errors=$(read_journal "$num_lines")
+    [[ -n "$errors" ]] && notify "$errors"
+}
+
+exec 200>"$LOCK_FILE"
+flock 200
+
+check_errors "${1:-0}"
