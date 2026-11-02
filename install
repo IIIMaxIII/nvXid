@@ -14,3 +14,6 @@ wget -q -O /hive/bin/nvErr https://github.com/IIIMaxIII/nvXid/raw/refs/heads/mai
 remove:
 sudo rm -f /hive/bin/nvErr /hive/bin/nvErr.cfg && sudo sed -i '/\/hive\/bin\/nvErr/d' /hive/etc/crontab.root
 reboot
+
+check:
+ls -l /hive/bin/nvErr /hive/bin/nvErr.cfg; grep "nvErr" /hive/etc/crontab.root; grep nvErr /var/log/syslog | tail -5
