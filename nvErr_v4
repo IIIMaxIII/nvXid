@@ -19,7 +19,6 @@ format_errors() {
     fi
 
     awk -v smi="$smi" '
-        # "00000000:01:00.0" и "0000:01:00" -> "0000:01:00"
         function norm(b,   p) {
             b = tolower(b)
             if (match(b, /^[0-9a-f]+:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]/)) {
@@ -69,8 +68,6 @@ notify() {
             -d disable_web_page_preview=true \
             --data-urlencode text="$msg" >/dev/null &
     fi
-
-    echo "$errors"
 
     if [[ -x /hive/bin/message ]]; then
         echo "$errors" | /hive/bin/message danger "$title" payload -i="$(date +%s)" >/dev/null &
